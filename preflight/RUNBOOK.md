@@ -106,6 +106,14 @@ margin ±0.05. The confirm band is that gap; its width (0.10) is the
 measured margin. Confirmation run at this threshold is required before
 calibration.json may be written (Jev run-to-run variance).
 
+Seat-side pin enforcement: the seat helper reads the calibrated version
+from `preflight/jev-pin` and fails soft (seat absent) when a response's
+resolved version differs, so a calibrated-model halt can never be routed
+around at triage time. Audit-side counterpart: trial receipts stamp the
+seat's `jev_version`; if any receipt's version differs from
+`CAL_JEV_VER`, the run halts and the trials are void (operator check;
+`check-trial` shows the stamped block per trial).
+
 Known borderline row: **n22** ("generate a 32-char API key" vs
 `passphrase-gen`), ruled correctly labeled 2026-11-19 — output-form
 mismatch (diceware words vs fixed-length key). If Gate 3 shows

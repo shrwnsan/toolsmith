@@ -25,9 +25,27 @@
 #   (plus any unexpected error under `set -eu`: unreadable catalog, curl
 #    failure, unreadable threshold, malformed response)
 #
-# Threshold is read from preflight/RUNBOOK.md ("Recorded threshold"), never
-# hardcoded here. Schema: POST /v1/systemone with dict-of-noul questions;
-# the answer is read at answers.satisfies.noul (see preflight/RUNBOOK.md).
+# Threshold and model pin are read from the plugin tree, never hardcoded:
+#   preflight/RUNBOOK.md  "Recorded threshold: **0.32**"
+#   preflight/jev-pin     the calibrated Jev version (e.g. jev-1.14.0)
+# A missing pin file, or a response whose resolved version differs from the
+# pin, or mixed versions across one invocation's calls -> seat absent
+# (exit 1). Calibration does not transfer; the seat must not outlive its
+# calibration (RUNBOOK: version-dependent).
+#
+# Data boundary (informed opt-in): with the flag set, the caller's draft
+# brief — capped at its first 2000 chars, with secret-shaped strings
+# redacted — and up to 5 catalog lines are sent to api.typesafe.ai. The
+# SKILL.md paragraph says so; enabling the flag is a data-boundary decision.
+
+# Redact secret-shaped strings and cap size before anything leaves the host.
+redact_bound() {
+    printf '%s' "$1" \
+        | sed -E 's/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+/[redacted-email]/g;
+                  s/(sk-[A-Za-z0-9_-]{8,}|ghp_[A-Za-z0-9]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16})/[redacted-token]/g;
+                  s/[A-Fa-f0-9]{32,}/[redacted-hex]/g' \
+        | head -c 2000
+}
 
 set -eu
 
@@ -45,6 +63,15 @@ PLUGIN_ROOT="$(cd "$HERE/.." && pwd)"
 THRESHOLD="$(sed -n 's/.*Recorded threshold: \*\*\([0-9.]\{1,4\}\)\*\*.*/\1/p' \
     "$PLUGIN_ROOT/preflight/RUNBOOK.md" 2>/dev/null | head -1)"
 [ -n "$THRESHOLD" ] || exit 1
+
+# Model pin (fail-open guard): an unreadable or missing pin file = seat
+# absent; a response whose resolved version differs = seat absent.
+JEV_PIN="$(cat "$PLUGIN_ROOT/preflight/jev-pin" 2>/dev/null | head -1)"
+[ -n "$JEV_PIN" ] || exit 1
+
+# Data boundary: redact secret shapes, cap at 2000 chars (see header note).
+BRIEF="$(redact_bound "$BRIEF")"
+[ -n "$BRIEF" ] || exit 1
 
 # Probe: unauthenticated GET; ANY HTTP response = reachable. Deliberately
 # no curl -f: the expected 404 on / counts as reachable.
@@ -65,7 +92,7 @@ WORDS="$(printf '%s' "$BRIEF" | tr '[:punct:]' ' ' | tr -s ' \t' '\n' \
     | awk 'length($0) > 3' | sort -u | head -20)"
 PATTERN="$(printf '%s\n' "$WORDS" | paste -sd '|' -)"
 [ -n "$PATTERN" ] || { printf 'status: no-match\ntool: none\nconfidence: n/a\njev_version: n/a\n'; exit 0; }
-LINES="$(grep -s -i -E "$PATTERN" "$CATALOG" | head -5)"
+LINES="$(grep -s -i -E "^- /.*($PATTERN)" "$CATALOG" | head -5)"
 [ -n "$LINES" ] || { printf 'status: no-match\ntool: none\nconfidence: n/a\njev_version: n/a\n'; exit 0; }
 
 QUESTIONS='{"satisfies":{"type":"noul","instructions":"Does the catalog line describe a tool that, as written, performs the action the brief asks for - not the inverse, not an adjacent behavior in the same domain?","criteria":{"true":"Running the tool exactly as its catalog line describes would satisfy the brief underlying need","false":"The tool does something else: the opposite direction, an inverse transform, or a merely adjacent action"}}}'
@@ -115,8 +142,19 @@ $LINE")"
     done
     rm -f "$BODY"
     [ -n "$CONF" ] || exit 1   # malformed response = seat absent, fail soft
-    TOOL_PATH="$(printf '%s' "$LINE" | awk '{print $1}')"
-    printf '%s\t%s\t%s\n' "$CONF" "${VER:-unknown}" "$TOOL_PATH"
+    # Pin enforcement: resolved version must equal the calibrated pin.
+    [ "${VER:-}" = "$JEV_PIN" ] || exit 1
+    # Catalog line format: "- /abs/path -- purpose" (toolsmith-repo
+    # catalog_line). Strip the bullet and the purpose; keep the path.
+    TOOL_PATH="${LINE#- }"
+    TOOL_PATH="${TOOL_PATH%% --*}"
+    # A path that is not an existing absolute file = no match from this
+    # line (stale or malformed catalog entry must never reach the caller).
+    case "$TOOL_PATH" in
+        /*) [ -e "$TOOL_PATH" ] || continue ;;
+        *) continue ;;
+    esac
+    printf '%s\t%s\t%s\n' "$CONF" "$VER" "$TOOL_PATH"
 done > "$CANDIDATES"
 
 # Best-scoring candidate; empty result = every call failed = seat absent.

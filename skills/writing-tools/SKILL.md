@@ -56,7 +56,10 @@ lost.
    **Optional triage shortcut (experimental; inert unless enabled).** If
    `TOOLSMITH_TRIAGE` is set to `1` in your environment AND a
    `triage-brief` helper is on your PATH or next to the toolsmith plugin's
-   own `bin/`, you may run it with your draft brief before step 2. If it
+   own `bin/`, you may run it with your draft brief before step 2. Note
+   that when it runs it sends your draft brief (capped and with
+   secret-shaped strings redacted) and up to five catalog lines to
+   api.typesafe.ai — setting the flag is a data-boundary decision. If it
    exits non-zero, print nothing about it: the shortcut is simply
    unavailable, and step 2 happens exactly as it always does. If it prints
    `status: match` with a `tool:` line, run that tool's `--help` and use
