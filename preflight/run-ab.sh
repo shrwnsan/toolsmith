@@ -125,7 +125,7 @@ for cell in $CELLS; do
     while [ "$rep" -le "$reps" ]; do
         [ "$RAN" -lt "$ROOM" ] || break 2
         # trial ids carry a repetition counter (F1) so cells hold many trials
-        TID="$ARM:$sc#$rep"
+        TID="$ARM:seat$AB_SEAT:$sc#$rep"
         if done_ids | grep -qx "$TID"; then
             printf 'skip (done): %s\n' "$TID"; rep=$((rep + 1)); continue
         fi
