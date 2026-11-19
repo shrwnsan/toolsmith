@@ -1,0 +1,132 @@
+#!/usr/bin/env bash
+# triage-brief: the experimental Jev seat (env-flag-gated; see
+# preflight/DESIGN-NOTE.md rows 4/5/6 — invariants).
+#
+# Scores a caller's brief against catalog lines so a near-match can be used
+# without a toolsmith round trip. Opt-in: with TOOLSMITH_TRIAGE unset, or
+# the key absent, or the probe failing, or ANY internal error, the seat is
+# simply absent — the caller escalates exactly as upstream behaves today.
+# Degrade soft: never block, never argue, never write the catalog.
+#
+# Contract:
+#   triage-brief "<brief>"        (or:  printf '%s' "<brief>" | triage-brief)
+# On success prints a structured block on stdout:
+#   status: match | no-match
+#   tool: <absolute path of the best-scoring catalog tool, or none>
+#   confidence: <noul probability, 0-1, or n/a>
+#   jev_version: <resolved model version from the response, or n/a>
+# Any failure exits non-zero with no stdout — the caller treats that as
+# "no seat" and escalates as before.
+#
+# Fail-soft paths (all exit 1, seat absent, no stdout):
+#   1. TOOLSMITH_TRIAGE != 1             -> seat disabled by configuration
+#   2. TYPESAFE_API_KEY not set          -> presence check only; never printed
+#   3. probe GET yields no HTTP response -> egress down
+#   (plus any unexpected error under `set -eu`: unreadable catalog, curl
+#    failure, unreadable threshold, malformed response)
+#
+# Threshold is read from preflight/RUNBOOK.md ("Recorded threshold"), never
+# hardcoded here. Schema: POST /v1/systemone with dict-of-noul questions;
+# the answer is read at answers.satisfies.noul (see preflight/RUNBOOK.md).
+
+set -eu
+
+[ "${TOOLSMITH_TRIAGE:-}" = "1" ] || exit 1
+[ -n "${TYPESAFE_API_KEY:-}" ] || exit 1   # presence only; value never printed
+
+BRIEF="${1:-}"
+if [ -z "$BRIEF" ] && [ ! -t 0 ]; then BRIEF="$(cat)"; fi
+[ -n "$BRIEF" ] || exit 1
+
+HERE="$(cd "$(dirname "$0")" && pwd)"
+PLUGIN_ROOT="$(cd "$HERE/.." && pwd)"
+
+# Threshold: parse from the preflight RUNBOOK; unreadable = seat absent.
+THRESHOLD="$(sed -n 's/.*Recorded threshold: \*\*\([0-9.]\{1,4\}\)\*\*.*/\1/p' \
+    "$PLUGIN_ROOT/preflight/RUNBOOK.md" 2>/dev/null | head -1)"
+[ -n "$THRESHOLD" ] || exit 1
+
+# Probe: unauthenticated GET; ANY HTTP response = reachable. Deliberately
+# no curl -f: the expected 404 on / counts as reachable.
+curl -sS -o /dev/null --max-time 8 https://api.typesafe.ai/ >/dev/null 2>&1 \
+    || exit 1
+
+# Catalog: read-only locate; its exit 8 (outside a git repo) is fine —
+# repo= and global_catalog= are printed on stdout even then.
+LOCATE_RC=0
+LOCATE_OUT="$("$HERE/toolsmith-repo" locate 2>/dev/null)" || LOCATE_RC=$?
+[ "$LOCATE_RC" -eq 0 ] || [ "$LOCATE_RC" -eq 8 ] || exit 1
+CATALOG="$(printf '%s\n' "$LOCATE_OUT" | sed -n 's/^global_catalog=//p' | head -1)"
+[ -n "$CATALOG" ] && [ -r "$CATALOG" ] || exit 1
+
+# Pick the closest few catalog lines: grep brief keywords against the
+# catalog, capped at 5. No candidates = status no-match, zero spend.
+WORDS="$(printf '%s' "$BRIEF" | tr '[:punct:]' ' ' | tr -s ' \t' '\n' \
+    | awk 'length($0) > 3' | sort -u | head -20)"
+PATTERN="$(printf '%s\n' "$WORDS" | paste -sd '|' -)"
+[ -n "$PATTERN" ] || { printf 'status: no-match\ntool: none\nconfidence: n/a\njev_version: n/a\n'; exit 0; }
+LINES="$(grep -s -i -E "$PATTERN" "$CATALOG" | head -5)"
+[ -n "$LINES" ] || { printf 'status: no-match\ntool: none\nconfidence: n/a\njev_version: n/a\n'; exit 0; }
+
+QUESTIONS='{"satisfies":{"type":"noul","instructions":"Does the catalog line describe a tool that, as written, performs the action the brief asks for - not the inverse, not an adjacent behavior in the same domain?","criteria":{"true":"Running the tool exactly as its catalog line describes would satisfy the brief underlying need","false":"The tool does something else: the opposite direction, an inverse transform, or a merely adjacent action"}}}'
+
+# JSON-escape in pure bash (backslash, double quote, newline) — stock macOS
+# has no usable python3 until the CLT are installed.
+json_escape() {
+    local s="$1"
+    s="${s//\\/\\\\}"
+    s="${s//\"/\\\"}"
+    s="${s//$'\n'/\\n}"
+    s="${s//$'\t'/\\t}"
+    printf '%s' "$s"
+}
+
+CANDIDATES="$(mktemp "${TMPDIR:-/tmp}/triage-brief.XXXXXX")"
+trap 'rm -f "$CANDIDATES"' EXIT
+
+# Score each candidate; one curl per line, 3 attempts on retryable codes.
+printf '%s\n' "$LINES" | while IFS= read -r LINE; do
+    [ -n "$LINE" ] || continue
+    STATE="$(json_escape "$BRIEF
+$LINE")"
+    BODY="$(mktemp "${TMPDIR:-/tmp}/triage-brief.XXXXXX")"
+    printf '{"state":"%s","model":"jev-latest","questions":%s}' \
+        "$STATE" "$QUESTIONS" > "$BODY"
+    CONF=""; VER=""
+    ATTEMPT=1
+    while [ "$ATTEMPT" -le 3 ]; do
+        RESP="$(curl -sS --max-time 60 -w '\n%{http_code}' \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${TYPESAFE_API_KEY}" \
+            --data @"$BODY" \
+            https://api.typesafe.ai/v1/systemone 2>/dev/null)" || RESP=""
+        CODE="$(printf '%s' "$RESP" | tail -1)"
+        PAYLOAD="$(printf '%s' "$RESP" | sed '$d')"
+        case "$CODE" in
+            200)
+                CONF="$(printf '%s' "$PAYLOAD" | sed -n 's/.*"noul":[[:space:]]*\([0-9.]\{1,6\}\).*/\1/p' | head -1)"
+                VER="$(printf '%s' "$PAYLOAD" | sed -n 's/.*"model":[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+                break ;;
+            429|500|502|503)
+                ATTEMPT=$((ATTEMPT + 1))
+                sleep $((ATTEMPT * 1)) ;;
+            *) break ;;   # other codes: give up on this candidate
+        esac
+    done
+    rm -f "$BODY"
+    [ -n "$CONF" ] || exit 1   # malformed response = seat absent, fail soft
+    TOOL_PATH="$(printf '%s' "$LINE" | awk '{print $1}')"
+    printf '%s\t%s\t%s\n' "$CONF" "${VER:-unknown}" "$TOOL_PATH"
+done > "$CANDIDATES"
+
+# Best-scoring candidate; empty result = every call failed = seat absent.
+[ -s "$CANDIDATES" ] || exit 1
+BEST="$(sort -t "$(printf '\t')" -k1,1nr "$CANDIDATES" | head -1)"
+BEST_CONF="$(printf '%s' "$BEST" | cut -f1)"
+BEST_VER="$(printf '%s' "$BEST" | cut -f2)"
+BEST_TOOL="$(printf '%s' "$BEST" | cut -f3)"
+[ -n "$BEST_CONF" ] || exit 1
+
+if awk "BEGIN{exit !($BEST_CONF >= $THRESHOLD)}"; then STATUS=match; else STATUS=no-match; fi
+printf 'status: %s\ntool: %s\nconfidence: %s\njev_version: %s\n' \
+    "$STATUS" "$BEST_TOOL" "$BEST_CONF" "$BEST_VER"

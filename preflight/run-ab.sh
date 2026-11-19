@@ -40,10 +40,19 @@ SCENARIO_RUNNER="$REPO_ROOT/tests/scenarios/run-scenario"
 [ -x "$SCENARIO_RUNNER" ] || die "run-scenario not found/executable at $SCENARIO_RUNNER"
 
 ARM="${1:-}"
+# Seat state for this invocation: 0 = seat-off (baseline arm), 1 = seat-on.
+# Only the flag differs between arms — same host, same model/effort pins,
+# identical checkout (RUNBOOK A/B design).
+AB_SEAT="${AB_SEAT:-0}"
+case "$AB_SEAT" in 0|1) ;; *) die "AB_SEAT must be 0 or 1" ;; esac
+export TOOLSMITH_TRIAGE="$AB_SEAT"
+
 case "$ARM" in
-  primary)    SCENARIOS="log-trawl subagent existing-tool mission user-says-scratch no-agent-tool"; LIMIT=$MAX_PRIMARY ;;
-  transfer)   SCENARIOS="log-trawl existing-tool mission"; LIMIT=$MAX_TRANSFER ;;
-  diagnostic) SCENARIOS="${AB_DIAGNOSTIC_SCENARIO:?set AB_DIAGNOSTIC_SCENARIO}"; LIMIT=$MAX_DIAGNOSTIC ;;
+  # Planned cells (RUNBOOK A/B design): the three seat-relevant scenarios.
+  primary)    CELLS="existing-tool:3 log-trawl:3 subagent:2"; LIMIT=$MAX_PRIMARY ;;
+  transfer)   CELLS="existing-tool:2 log-trawl:2 mission:2";  LIMIT=$MAX_TRANSFER ;;
+  # Diagnostic: single-scenario max-effort rerun; never an experimental arm.
+  diagnostic) CELLS="${AB_DIAGNOSTIC_SCENARIO:?set AB_DIAGNOSTIC_SCENARIO}:1"; LIMIT=$MAX_DIAGNOSTIC ;;
   *) die "usage: run-ab.sh primary|transfer|diagnostic" ;;
 esac
 
@@ -72,12 +81,13 @@ ROOM=$((LIMIT - ARM_USED))
 [ "$ROOM" -gt "$MAX_PER_INVOCATION" ] && ROOM=$MAX_PER_INVOCATION
 
 # --- run -------------------------------------------------------------------
-stamp_receipt() { # trial_dir scenario result
-    local td="$1" sc="$2" res="$3"
+stamp_receipt() { # trial_dir trial_id result
+    local td="$1" tid="$2" res="$3"
     {
         printf 'date=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
         printf 'host=%s\n' "$(uname -sr)"
-        printf 'scenario=%s\narm=%s\n' "$sc" "$ARM"
+        printf 'scenario=%s\narm=%s\n' "${tid#*:}" "$ARM"
+        printf 'trial_id=%s\nseat=%s\n' "$tid" "$AB_SEAT"
         printf 'model=%s\n' "${AB_TRIAL_MODEL:-unset-set-CLI-default-once}"
         printf 'effort=%s\n' "${AB_TRIAL_EFFORT:-unset-set-CLI-default-once}"
         printf 'routing_host=%s\n' "${AB_ROUTING_HOST:-oci-prime}"
@@ -87,33 +97,36 @@ stamp_receipt() { # trial_dir scenario result
 }
 
 RAN=0
-for sc in $SCENARIOS; do
-    [ "$RAN" -lt "$ROOM" ] || break
-    # resume: a scenario id already in state.json is skipped
-    if done_ids | grep -qx "$ARM:$sc"; then
-        printf 'skip (done): %s\n' "$sc"; continue
-    fi
-    printf 'trial: %s (%s)\n' "$sc" "$ARM"
-    # Capture the runner's stdout: its last line names the run dir
-    # ("... Logs: <run_dir> ...", already realpath'd by run-scenario).
-    # Never guess a shared-/tmp glob — attribution must be exact.
-    OUT="$("$SCENARIO_RUNNER" "$sc" --trials 1 2>&1)" && RES=PASS || RES=FAIL
-    # a FAIL is recorded, not fatal; halts are the gate's job
-    RUN_DIR_ACTUAL="$(printf '%s\n' "$OUT" | sed -n 's/.*Logs: \([^ ]*\).*/\1/p' | tail -1)"
-    [ -n "$RUN_DIR_ACTUAL" ] || printf 'run-ab: warning: could not parse run dir for %s; receipt says unknown\n' "$sc" >&2
-    # Fail closed on quota accounting: if state cannot be updated durably,
-    # stop before any further spend. Receipt is written only after state.
-    if ! jq --arg id "$ARM:$sc" --arg r "$RES" --arg a "$ARM" \
-         '.trials[$id] = $r | .arms[$a].count = ((.arms[$a].count // 0) + 1)' \
-         "$STATE" > "$STATE.tmp"; then
-        die "could not update state.json for $sc — aborting before further spend"
-    fi
-    mv "$STATE.tmp" "$STATE"
-    stamp_receipt "${RUN_DIR_ACTUAL:-unknown}" "$sc" "$RES"
-    jq --arg id "$ARM:$sc" --arg r "$RES" \
-       '.trials[$id] = $r | .arms[$ARM].count = ((.arms[$ARM].count // 0) + 1)' \
-       "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
-    RAN=$((RAN + 1))
+for cell in $CELLS; do
+    sc="${cell%%:*}"; reps="${cell##*:}"
+    rep=1
+    while [ "$rep" -le "$reps" ]; do
+        [ "$RAN" -lt "$ROOM" ] || break 2
+        # trial ids carry a repetition counter (F1) so cells hold many trials
+        TID="$ARM:$sc#$rep"
+        if done_ids | grep -qx "$TID"; then
+            printf 'skip (done): %s\n' "$TID"; rep=$((rep + 1)); continue
+        fi
+        printf 'trial: %s (arm=%s seat=%s)\n' "$TID" "$ARM" "$AB_SEAT"
+        # Capture the runner's stdout: its last line names the run dir
+        # ("... Logs: <run_dir> ...", already realpath'd by run-scenario).
+        # Never guess a shared-/tmp glob — attribution must be exact.
+        OUT="$("$SCENARIO_RUNNER" "$sc" --trials 1 2>&1)" && RES=PASS || RES=FAIL
+        # a FAIL is recorded, not fatal; halts are the gate's job
+        RUN_DIR_ACTUAL="$(printf '%s\n' "$OUT" | sed -n 's/.*Logs: \([^ ]*\).*/\1/p' | tail -1)"
+        [ -n "$RUN_DIR_ACTUAL" ] || printf 'run-ab: warning: could not parse run dir for %s; receipt says unknown\n' "$TID" >&2
+        # Fail closed on quota accounting: if state cannot be updated durably,
+        # stop before any further spend. Receipt is written only after state.
+        if ! jq --arg id "$TID" --arg r "$RES" --arg a "$ARM" \
+             '.trials[$id] = $r | .arms[$a].count = ((.arms[$a].count // 0) + 1)' \
+             "$STATE" > "$STATE.tmp"; then
+            die "could not update state.json for $TID — aborting before further spend"
+        fi
+        mv "$STATE.tmp" "$STATE"
+        stamp_receipt "${RUN_DIR_ACTUAL:-unknown}" "$TID" "$RES"
+        RAN=$((RAN + 1))
+        rep=$((rep + 1))
+    done
 done
 
 printf 'done: ran=%d arm=%s arm_used=%d/%d total_trials=%d\n' \

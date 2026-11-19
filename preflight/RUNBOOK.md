@@ -106,6 +106,33 @@ margin ±0.05. The confirm band is that gap; its width (0.10) is the
 measured margin. Confirmation run at this threshold is required before
 calibration.json may be written (Jev run-to-run variance).
 
+Known borderline row: **n22** ("generate a 32-char API key" vs
+`passphrase-gen`), ruled correctly labeled 2026-11-19 — output-form
+mismatch (diceware words vs fixed-length key). If Gate 3 shows
+output-form false-clears, that refines the QUESTION set, not the corpus.
+
+## A/B design (Gate 3; resolves F2's design restatement)
+
+- **Baseline arm = seat-off on this host and tier** (`AB_SEAT=0`).
+  Upstream's published 36-trial table is context only — a different
+  host, model, and epoch — and is NEVER the comparison arm.
+- Arms differ in exactly one bit: `TOOLSMITH_TRIAGE=0|1`, exported by
+  `run-ab.sh` per invocation. Same host, same model/effort pins,
+  identical checkout.
+- Planned cells (trial ids carry repetition counters, e.g.
+  `primary:log-trawl#2`):
+  - primary (heavy, effort=high, cap 8): existing-tool ×3, log-trawl ×3,
+    subagent ×2 — the three seat-relevant scenarios;
+  - transfer (flash, cap 6): existing-tool ×2, log-trawl ×2, mission ×2;
+  - `mission` and `user-says-scratch` stay compliance checks in BOTH
+    arms: they must pass unchanged wherever they run; the seat is
+    expected to be irrelevant to them, and a seat that changes their
+    outcome is a seat defect.
+- Diagnostic budget unchanged (≤2 max-effort reruns per invocation,
+  never tallied into an arm).
+- Seat state (`seat=0|1`) is stamped on every trial receipt, so the
+  arms remain separable even when invocations interleave.
+
 ## Trial quota caps (per `run-ab.sh` invocation)
 
 - Max trials per invocation: 12.

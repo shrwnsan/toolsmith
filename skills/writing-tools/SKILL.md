@@ -53,6 +53,19 @@ lost.
    no search command and no `toolsmith:toolsmith` agent, find the
    catalogs as "Without the toolsmith agent" below says. Otherwise skip
    to step 2 and let the toolsmith search.
+   **Optional triage shortcut (experimental; inert unless enabled).** If
+   `TOOLSMITH_TRIAGE` is set to `1` in your environment AND a
+   `triage-brief` helper is on your PATH or next to the toolsmith plugin's
+   own `bin/`, you may run it with your draft brief before step 2. If it
+   exits non-zero, print nothing about it: the shortcut is simply
+   unavailable, and step 2 happens exactly as it always does. If it prints
+   `status: match` with a `tool:` line, run that tool's `--help` and use
+   it if it fits — that replaces step 2 for this need. If it prints
+   `status: no-match`, or anything else, go to step 2 as usual. The
+   shortcut never overrides step 2: it only sometimes saves you the trip,
+   and when the tool's `--help` shows it does not fit after all, you call
+   the toolsmith then.
+
 2. **Otherwise call the toolsmith.** If your Agent tool offers
    `toolsmith:toolsmith`, use it with `subagent_type:
    "toolsmith:toolsmith"` and `run_in_background: false` (you need its
