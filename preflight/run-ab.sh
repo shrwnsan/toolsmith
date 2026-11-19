@@ -94,13 +94,14 @@ for sc in $SCENARIOS; do
         printf 'skip (done): %s\n' "$sc"; continue
     fi
     printf 'trial: %s (%s)\n' "$sc" "$ARM"
-    if "$SCENARIO_RUNNER" "$sc" --trials 1; then
-        RES=PASS
-    else
-        RES=FAIL   # a FAIL is recorded, not fatal; halts are the gate's job
-    fi
-    LATEST="$(ls -1dt "${TMPDIR:-/tmp}"/toolsmith-ab/trial-* 2>/dev/null | head -1 || true)"
-    stamp_receipt "${LATEST:-unknown}" "$sc" "$RES"
+    # Capture the runner's stdout: its last line names the run dir
+    # ("... Logs: <run_dir> ...", already realpath'd by run-scenario).
+    # Never guess a shared-/tmp glob — attribution must be exact.
+    OUT="$("$SCENARIO_RUNNER" "$sc" --trials 1 2>&1)" && RES=PASS || RES=FAIL
+    # a FAIL is recorded, not fatal; halts are the gate's job
+    RUN_DIR_ACTUAL="$(printf '%s\n' "$OUT" | sed -n 's/.*Logs: \([^ ]*\).*/\1/p' | tail -1)"
+    stamp_receipt "${RUN_DIR_ACTUAL:-unknown}" "$sc" "$RES"
+    [ -n "$RUN_DIR_ACTUAL" ] || printf 'run-ab: warning: could not parse run dir for %s; receipt says unknown\n' "$sc" >&2
     jq --arg id "$ARM:$sc" --arg r "$RES" \
        '.trials[$id] = $r | .arms[$ARM].count = ((.arms[$ARM].count // 0) + 1)' \
        "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
