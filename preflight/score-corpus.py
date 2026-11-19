@@ -181,7 +181,7 @@ def main():
               "(F5: measure the band first, then run at the derived "
               "threshold separately)", file=sys.stderr)
         sys.exit(1)
-    if args.band == (args.threshold is None):
+    if args.band != (args.threshold is None):
         print("choose exactly one of --band or --threshold", file=sys.stderr)
         sys.exit(1)
 
