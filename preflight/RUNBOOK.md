@@ -53,10 +53,36 @@ No real API spend of any kind until the user explicitly says go.
 6. Calibration never transfers across hosts, model updates, or question
    sets.
 
-### Confirm-band mechanics (match/no-match; recorded at Gate 2)
+### Matching-semantics definition (Gate 2 re-corpus, 2026-11-19)
 
-To be filled in from the measured band — the mechanics are re-derived for
-match/no-match, not inherited from the audit gate:
+A catalog tool **MATCHES** a brief when the brief's underlying need is
+satisfied by the tool **as its catalog line describes it**, including via
+documented safe flags (`--dry-run`, `--list`, read-only modes). A different
+action verb (archive vs delete, list vs page) or a different target (file
+vs live host, spec vs log) = **no-match**, even in the same domain. This
+definition settled the Gate 2 halt: n16 was mislabeled, not mis-scored —
+`prune-old --dry-run` satisfies "list files older than 30d for review",
+so routing there is the seat succeeding.
+
+### Working systemone schema (replaces the stale mapped mapping)
+
+Verified against a working client on this host (vibekit/reflex
+`reflex-gate.mjs`) and confirmed by live 422 diagnostics on 2026-11-19:
+
+- `questions` is a **dict of named question objects**, each
+  `{type: "noul", instructions: <str>, criteria: {true: <str>, false: <str>}}`.
+  A JSON list → 422 `dict_type`; a dict of bare strings → 422
+  `model_attributes_type` per key.
+- Answers: `r["answers"]["<question-name>"]["noul"]` = probability that the
+  `true` criterion holds. There is no `classification.choice` field in this
+  question shape.
+- The audit sibling's format — a JSON **list** of questions answered as
+  `answers.classification.choice`/`.confidence` — also exists per
+  `context-triage.py` v1.2.x (the two shapes appear to be per-question-type
+  variants). Future agents: check which shape your questions use before
+  the first call; both 422s are charged nothing but cost a round trip.
+- Endpoint `POST {TYPESAFE_BASE_URL:-...}/v1/systemone`; retry and
+  resolved-version behavior unchanged (see score-corpus.py header).
 
 - Predicted match = classifier choice `match` AND confidence >= threshold.
   Below threshold, the seat escalates to the toolsmith (today's baseline
