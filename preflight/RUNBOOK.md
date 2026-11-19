@@ -31,20 +31,47 @@ No real API spend of any kind until the user explicitly says go.
 
 ## Calibration gate (before any arm)
 
-1. Score the corpus with the Jev scorer (`score-corpus.py`) at the
-   candidate threshold.
-2. Baseline is 2–3 scorer calibration calls against the pinned Jev
-   version (~$0.001 each) plus full corpus scoring.
-3. **Halt conditions — stop and report, do not tune pins:**
+1. Probe egress (free, unauthenticated GET; any HTTP response = reachable).
+2. Measure the confidence **band** first (`score-corpus.py --band`): score
+   the corpus with no threshold and record min/max confidence per label
+   class from the receipts.
+3. **The threshold is measured, never assumed.** The audit sibling's 0.75
+   does NOT transfer — it was measured against its own questions, and our
+   QUESTIONS are different (authored for match/no-match). Pick the
+   threshold from the measured band, then record BOTH the threshold and
+   the confirm-band mechanics here (below) before any scored run.
+4. Baseline is the full corpus scored at that threshold (~$0.50).
+5. **Halt conditions — stop and report, do not tune pins:**
    - baseline lands at floor (near-0 discrimination) or ceiling
      (near-perfect on everything including hard negatives);
    - false-clear rate at the chosen threshold is not ~0;
-   - Jev version differs from the calibrated one (calibration is
+   - the resolved Jev version differs from the calibrated one, or more
+     than one version appears in a single run (calibration is
      version-dependent, DECISIONS §10);
-   - egress probe to `api.typesafe.ai` fails (settle with a probe GET,
-     never assumptions).
+   - egress probe fails (no HTTP response at all).
    A halt is a valid result. Report; the user decides the next pin set.
-4. Calibration never transfers across hosts or model updates.
+6. Calibration never transfers across hosts, model updates, or question
+   sets.
+
+### Confirm-band mechanics (match/no-match; recorded at Gate 2)
+
+To be filled in from the measured band — the mechanics are re-derived for
+match/no-match, not inherited from the audit gate:
+
+- Predicted match = classifier choice `match` AND confidence >= threshold.
+  Below threshold, the seat escalates to the toolsmith (today's baseline
+  behavior — never blocks).
+- **False clear** (predicted match on a no-match row) is the barred
+  failure: it runs the wrong tool or hides a catalog gap. Gate 2 passes
+  only at false-clear = 0.
+- **False block** (no predicted match on a match row) costs one wasted
+  toolsmith round trip — the baseline cost, tolerated but counted.
+- The band between "lowest confident true match" and "highest confident
+  false clear" (if they overlap, the question set is too weak — halt) is
+  the confirm band; the threshold sits inside it, and its width is the
+  measured margin, reported as such.
+
+Recorded threshold: **unset — measured at Gate 2**, per step 3.
 
 ## Trial quota caps (per `run-ab.sh` invocation)
 
