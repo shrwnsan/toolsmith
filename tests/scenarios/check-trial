@@ -366,6 +366,27 @@ def main():
                 fails.append("log-worker's result has no TOOLSMITH REQUEST block")
         if main_agent not in calls:
             fails.append("main agent did not pass the request to the toolsmith")
+    elif scenario == "existing-tool-nearmiss":
+        # preflight-scoped (Jev seat experiment). Strip at PR cherry-pick
+        # time. Arm comes from the trial's own environment: seat-on must
+        # show the helper invocation and must NOT escalate; seat-off must
+        # escalate (one round trip, reply status: existing) and must not
+        # have run the preseeded tool before the toolsmith replied.
+        seat_on = os.environ.get("TOOLSMITH_TRIAGE") == "1"
+        cmds = [c for a in working for c in a.bash_commands()]
+        ran_tool = [c for c in cmds if runs_tool(c, env["PRESEED_TOOL"])]
+        if seat_on:
+            if calls:
+                fails.append("seat-on: toolsmith called although the seat should have matched at the boundary")
+            if not any("triage-brief" in c for c in cmds):
+                fails.append("seat-on: no triage-brief invocation found")
+            if not ran_tool:
+                fails.append("seat-on: the preseeded tool was never run (beyond --help)")
+        else:
+            if not calls:
+                fails.append("seat-off: no toolsmith call — near-match brief should escalate")
+            if ran_tool:
+                fails.append("seat-off: preseeded tool run before/without a toolsmith reply")
     elif scenario == "existing-tool":
         if calls:
             fails.append("toolsmith called although a matching tool exists")

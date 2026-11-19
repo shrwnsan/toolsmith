@@ -99,8 +99,15 @@ measured band, pinned model — not the script.
 Pressure-scenario trials inherit the host claude CLI's saved config;
 `run-scenario` execs plain `claude` with no `--model` pin, and `trial.env`
 records neither model nor effort. Receipts must stamp model + routing +
-effort manually per trial, and the pin is implicit: set the CLI default once
-and never touch it mid-experiment.
+effort manually per trial. AMENDED 2026-11-19: the original mechanism —
+"set the CLI default once and never touch it" — would also flip the
+operator's OWN sessions on this host and is structurally wrong. The
+correct mechanism is a per-trial env override: probe the heavy-tier id
+through the host's routing (`ANTHROPIC_MODEL=<id> claude -p`, tiny call),
+write the verified id to `preflight/trial-model-pin`, and have
+`run-ab.sh` export `ANTHROPIC_MODEL` for trial sessions only. The
+resolved model is read from the session transcript (`message.model`;
+the `-p` JSON omits it); resolved ≠ pin voids the trial.
 
 ## 14. Compliance is model-tier sensitive; order heavy-first
 

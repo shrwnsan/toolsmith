@@ -17,8 +17,18 @@ No real API spend of any kind until the user explicitly says go.
 
 ## Pins (never adjusted mid-experiment)
 
-- **Primary arm:** heavy glm-5.3, effort = high. Chosen for attribution:
-  debug the seat on a reliable apparatus (DECISIONS §14).
+- **Primary arm:** heavy `glm-5.3`, effort = high. The id is PROBED, not
+  assumed: a tiny `ANTHROPIC_MODEL=glm-5.3 claude -p` call verifies the
+  heavy tier is reachable through this host's routing, and the verified
+  id is written to `preflight/trial-model-pin`. `run-ab.sh` exports
+  `ANTHROPIC_MODEL` from that file for trial sessions — the per-trial
+  override is the correct mechanism, because setting the host CLI default
+  (DECISIONS §13, amended) would also flip the operator's own sessions.
+  Receipts stamp the requested pin; the RESOLVED model comes from the
+  session transcript (its `message.model` field — the `-p` JSON omits
+  it). A trial whose resolved model ≠ pin is VOID: reported, never
+  tallied, never retried into an arm. Probe cost ~$0.02 (measured
+  2026-11-19; heavy tier is not cheap — matrix budgets must use it).
 - **Transfer check:** flash tier, ~6 trials, only after the primary arm
   is read. Its result is a transfer observation, never merged into the
   primary tallies.
@@ -138,10 +148,26 @@ output-form false-clears, that refines the QUESTION set, not the corpus.
   - primary (heavy, effort=high, cap 8): existing-tool ×3, log-trawl ×3,
     subagent ×2 — the three seat-relevant scenarios;
   - transfer (flash, cap 6): existing-tool ×2, log-trawl ×2, mission ×2;
+  - `existing-tool-nearmiss` (preflight-scoped scenario, preseeded like
+    existing-tool with a paraphrased brief that keyword grep plausibly
+    misses): the ONLY cell where the seat can differ from baseline —
+    expected seat-off = one toolsmith round trip (reply status:
+    existing), seat-on = helper match at the boundary, tool used
+    directly. Checker enforces per-arm expectations.
   - `mission` and `user-says-scratch` stay compliance checks in BOTH
     arms: they must pass unchanged wherever they run; the seat is
     expected to be irrelevant to them, and a seat that changes their
     outcome is a seat defect.
+
+### Seat firing rule (corrected 2026-11-19, replaces the blunter rule)
+
+The seat must fire WHEN THE ESCALATION BOUNDARY ARISES. A trial whose
+catalog grep already resolved the need (plain `existing-tool`) is
+**correctly seat-silent** — no helper invocation there is the seat
+working as designed, not a failure. A seat-on trial is a reportable
+failure only when the boundary arose (grep missed or was ambiguous) and
+the helper was not invoked. `existing-tool-nearmiss` exists precisely to
+place the agent at that boundary deterministically.
 - Diagnostic budget unchanged (≤2 max-effort reruns per invocation,
   never tallied into an arm).
 - Seat state (`seat=0|1`) is stamped on every trial receipt, so the

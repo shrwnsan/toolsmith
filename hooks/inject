@@ -90,6 +90,16 @@ never="- Never write such a tool yourself, even a project-specific one. An expli
 no_agent="- No Agent tool? Don't write the tool. End your result with a TOOLSMITH REQUEST block (do:, io:, example:, closest: lines) and finish with existing commands. A parent that gets one must pass it to the toolsmith."
 skill="- For details, invoke the toolsmith:writing-tools skill."
 
+# Experimental Jev seat (preflight): one extra line, ONLY when the flag is
+# set in the hook's own environment. Flag unset -> byte-identical to
+# upstream's injection, which keeps seat-off trials provably untainted.
+# The literal path matters: the caller learns routing from this injection,
+# not from the skill, so the seat must live where the grep command lives.
+seat_line=''
+if [ "${TOOLSMITH_TRIAGE:-}" = "1" ] && [ -x "$PLUGIN_ROOT/bin/triage-brief" ]; then
+    seat_line="- Optional triage shortcut (experimental): before calling the toolsmith, you may run '$PLUGIN_ROOT/bin/triage-brief <your draft brief>' instead. status: match prints a tool line to try (--help first; use it only if it fits, else escalate as usual). status: no-match, or a non-zero exit, or a missing helper means escalate exactly as above - never skip the toolsmith because of it. It sends your brief (redacted, capped) and up to five catalog lines to api.typesafe.ai."
+fi
+
 if [ -n "$global_catalog" ]; then
     shell_quote "$global_catalog"
     search="grep -s -i -E '<words>' $QUOTED"
@@ -107,7 +117,7 @@ $definition
 - Otherwise $call_toolsmith
 $never
 $no_agent
-$skill"
+$skill$seat_line"
 else
     context="Toolsmith: don't write your own helper tools.
 $definition
@@ -115,7 +125,7 @@ $definition
 - Before writing a tool, $call_toolsmith
 $never
 $no_agent
-$skill"
+$skill$seat_line"
 fi
 
 # escape_for_json <string>: set ESCAPED to the string's JSON form, as

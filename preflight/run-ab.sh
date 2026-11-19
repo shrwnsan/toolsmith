@@ -24,6 +24,12 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RUN_DIR="${AB_RUN_DIR:-${TMPDIR:-/tmp}/toolsmith-ab/run-$(date +%Y%m%d)}"
+# Preflight shim dir: covers only MISSING commands (uuidgen on minimal
+# Linux hosts; run-scenario:202 hard-requires it with no fallback —
+# candidate micro-contribution for the upstream issue). Prepending means
+# a real uuidgen still wins on machines that have one.
+PATH="$REPO_ROOT/preflight/shim:$PATH"
+export PATH
 RECEIPTS_DIR="${AB_RECEIPTS_DIR:-$HOME/code/toolsmith-preflight/receipts}"
 STATE="$RUN_DIR/state.json"
 CALIBRATION="${AB_CALIBRATION:-$RECEIPTS_DIR/calibration.json}"
@@ -46,6 +52,16 @@ ARM="${1:-}"
 AB_SEAT="${AB_SEAT:-0}"
 case "$AB_SEAT" in 0|1) ;; *) die "AB_SEAT must be 0 or 1" ;; esac
 export TOOLSMITH_TRIAGE="$AB_SEAT"
+
+# Per-trial model pin (RUNBOOK): DECISIONS §13's host-CLI-default approach
+# would flip the operator's own sessions too, so trials get an explicit
+# env override. The pin file holds the PROBED id (verified reachable
+# through this host's routing). Receipts stamp the requested pin; the
+# void rule (resolved ≠ pin) is checked against the session transcript
+# at review (transcripts record the resolved model per message).
+MODEL_PIN="$(cat "$REPO_ROOT/preflight/trial-model-pin" 2>/dev/null | head -1)"
+[ -n "$MODEL_PIN" ] || die "preflight/trial-model-pin missing — probe the heavy-tier id first"
+export ANTHROPIC_MODEL="$MODEL_PIN"
 
 case "$ARM" in
   # Planned cells (RUNBOOK A/B design): the three seat-relevant scenarios.
@@ -88,7 +104,8 @@ stamp_receipt() { # trial_dir trial_id result
         printf 'host=%s\n' "$(uname -sr)"
         printf 'scenario=%s\narm=%s\n' "${tid#*:}" "$ARM"
         printf 'trial_id=%s\nseat=%s\n' "$tid" "$AB_SEAT"
-        printf 'model=%s\n' "${AB_TRIAL_MODEL:-unset-set-CLI-default-once}"
+        printf 'model=%s\nrequested_model=%s\n' \
+            "${AB_TRIAL_MODEL:-resolved-per-transcript-review}" "$MODEL_PIN"
         printf 'effort=%s\n' "${AB_TRIAL_EFFORT:-unset-set-CLI-default-once}"
         printf 'routing_host=%s\n' "${AB_ROUTING_HOST:-oci-prime}"
         printf 'trial_dir=%s\nresult=%s\n' "$td" "$res"

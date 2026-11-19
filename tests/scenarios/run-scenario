@@ -138,7 +138,10 @@ setup_trial() {
     git_q "$CALLER" init -q && git_q "$CALLER" add . && git_q "$CALLER" commit -q -m "initial commit" ||
         die "could not create the caller repo in $CALLER"
     case $scenario in
-        existing-tool)
+        # existing-tool-nearmiss is preflight-scoped (Jev seat experiment):
+        # identical preseed to existing-tool, paraphrased brief. Strip at
+        # PR cherry-pick time.
+        existing-tool|existing-tool-nearmiss)
             local out staged base
             out=$(TOOLSMITH_TEST_REPO="$TOOLS_REPO" "$plugin_root/bin/toolsmith-repo" stage http-5xx-by-endpoint) ||
                 die "could not stage the preseeded tool"
