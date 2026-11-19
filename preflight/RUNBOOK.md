@@ -71,7 +71,14 @@ match/no-match, not inherited from the audit gate:
   the confirm band; the threshold sits inside it, and its width is the
   measured margin, reported as such.
 
-Recorded threshold: **unset — measured at Gate 2**, per step 3.
+Recorded threshold: **0.32** — measured 2026-11-19, band run on the full
+64-row corpus (receipt: `scorer-receipts.jsonl`, ~18:45Z). Resolved model
+`jev-1.14.0`, single version across all 64 calls. Bands: match rows
+[0.37, 0.98] (n=32), no-match rows [0.01, 0.27] (n=32), overlap = false.
+0.32 is the midpoint of the inter-band gap (0.27–0.37), giving symmetric
+margin ±0.05. The confirm band is that gap; its width (0.10) is the
+measured margin. Confirmation run at this threshold is required before
+calibration.json may be written (Jev run-to-run variance).
 
 ## Trial quota caps (per `run-ab.sh` invocation)
 

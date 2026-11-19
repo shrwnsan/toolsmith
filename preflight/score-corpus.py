@@ -63,16 +63,25 @@ BASE_DELAY = 0.25  # seconds; delay*4*(attempt+1) per the mapped retry rule
 
 # Authored for match/no-match triage. These are OURS; the audit script's
 # benign/pipeline-shaped questions are intentionally absent.
-QUESTIONS = [
-    "Does the catalog line describe a tool that, as written, performs the "
-    "action the brief asks for?",
-    "Does the brief ask for the opposite direction or the inverse "
-    "transformation of what the tool does?",
-    "Is the tool's purpose merely adjacent to the brief — same domain, "
-    "different action or different target?",
-    "If you ran the tool as its catalog line describes, would the brief's "
-    "underlying need be satisfied?",
-]
+# Schema verified from a working client on this host (reflex-gate.mjs,
+# vibekit/reflex): named questions, type "noul", binary criteria, answer is
+# answers.<name>.noul = probability(true). Authored for match/no-match; the
+# audit taxonomy is not carried over.
+QUESTIONS = {
+    "satisfies": {
+        "type": "noul",
+        "instructions": "Does the catalog line describe a tool that, as "
+                        "written, performs the action the brief asks for — "
+                        "not the inverse, not an adjacent behavior in the "
+                        "same domain?",
+        "criteria": {
+            "true": "Running the tool exactly as its catalog line describes "
+                    "would satisfy the brief's underlying need",
+            "false": "The tool does something else: the opposite direction, "
+                     "an inverse transform, or a merely adjacent action",
+        },
+    },
+}
 
 
 def now_iso():
@@ -112,7 +121,7 @@ def call_jev(state_text, model, receipts_dir):
     body = json.dumps({
         "state": state_text,
         "model": model,
-        "questions": QUESTIONS,
+        "questions": QUESTIONS,  # dict of named questions (API: 422 on list)
     }).encode()
     last = None
     for attempt in range(MAX_ATTEMPTS):
@@ -128,6 +137,11 @@ def call_jev(state_text, model, receipts_dir):
                 "model_resolved": data.get("model")})
             return data
         except urllib.error.HTTPError as exc:
+            # surface the API's error body so 4xx is diagnosable without
+            # ad-hoc calls; redact the Authorization header echo if any
+            detail = exc.read()[:400].decode(errors="replace")
+            detail = detail.replace(key, "<redacted>") if key else detail
+            print(f"api error {exc.code}: {detail}", file=sys.stderr)
             last = exc
             if exc.code in RETRYABLE and attempt < MAX_ATTEMPTS - 1:
                 time.sleep(BASE_DELAY * 4 * (attempt + 1))
@@ -141,8 +155,10 @@ def score_one(row, model, receipts_dir):
     state_text = ("Brief: " + row["brief"] + "\n\n"
                   "Catalog line: " + row["catalog_line"])
     data = call_jev(state_text, model, receipts_dir)
-    cls = data["answers"]["classification"]
-    return cls["choice"], float(cls["confidence"]), data.get("model")
+    # adapter: verified answer shape is answers.<name>.noul (probability of
+    # the "true" criterion) — see QUESTIONS above
+    p = float(data["answers"]["satisfies"]["noul"])
+    return "match", p, data.get("model")  # p IS the match confidence
 
 
 def main():
@@ -224,9 +240,13 @@ def main():
         bands = {}
         for label in ("match", "no-match"):
             cs = [c for c, r in zip(conf, rows) if r["label"] == label]
-            bands[label] = {"min": min(cs), "max": max(cs), "n": len(cs)}
-        bands["overlap"] = (bands["match"]["min"]
-                            <= bands["no-match"]["max"])
+            bands[label] = ({"min": min(cs), "max": max(cs), "n": len(cs)}
+                            if cs else {"n": 0})
+        if bands["match"].get("n") and bands["no-match"].get("n"):
+            bands["overlap"] = (bands["match"]["min"]
+                                <= bands["no-match"]["max"])
+        else:
+            bands["overlap"] = None  # partial corpus (limit): undecidable
         summary["bands"] = bands
         print(json.dumps({"band": summary,
                           "note": "pick threshold from the per-class bands; "
