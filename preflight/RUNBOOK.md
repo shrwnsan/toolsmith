@@ -114,6 +114,12 @@ seat's `jev_version`; if any receipt's version differs from
 `CAL_JEV_VER`, the run halts and the trials are void (operator check;
 `check-trial` shows the stamped block per trial).
 
+Known limitation: version drift DURING a seat-on trial fails the seat
+soft mid-trial, and the trial proceeds seat-less while still counted
+seat-on. Mitigated by per-trial seat-invocation evidence in review (the
+transcript's triage-helper call and reply block are checked for every
+seat-on trial before its result is trusted).
+
 Known borderline row: **n22** ("generate a 32-char API key" vs
 `passphrase-gen`), ruled correctly labeled 2026-11-19 — output-form
 mismatch (diceware words vs fixed-length key). If Gate 3 shows
