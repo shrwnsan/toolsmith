@@ -135,7 +135,7 @@ Known borderline row: **n22** ("generate a 32-char API key" vs
 mismatch (diceware words vs fixed-length key). If Gate 3 shows
 output-form false-clears, that refines the QUESTION set, not the corpus.
 
-## A/B design (Gate 3; resolves F2's design restatement)
+## A/B design (Gate 3, revised 2026-11-19 after calibration)
 
 - **Baseline arm = seat-off on this host and tier** (`AB_SEAT=0`).
   Upstream's published 36-trial table is context only — a different
@@ -143,21 +143,34 @@ output-form false-clears, that refines the QUESTION set, not the corpus.
 - Arms differ in exactly one bit: `TOOLSMITH_TRIAGE=0|1`, exported by
   `run-ab.sh` per invocation. Same host, same model/effort pins,
   identical checkout.
-- Planned cells (trial ids carry repetition counters, e.g.
-  `primary:log-trawl#2`):
-  - primary (heavy, effort=high, cap 8): existing-tool ×3, log-trawl ×3,
-    subagent ×2 — the three seat-relevant scenarios;
-  - transfer (flash, cap 6): existing-tool ×2, log-trawl ×2, mission ×2;
-  - `existing-tool-nearmiss` (preflight-scoped scenario, preseeded like
-    existing-tool with a paraphrased brief that keyword grep plausibly
-    misses): the ONLY cell where the seat can differ from baseline —
-    expected seat-off = one toolsmith round trip (reply status:
-    existing), seat-on = helper match at the boundary, tool used
-    directly. Checker enforces per-arm expectations.
-  - `mission` and `user-says-scratch` stay compliance checks in BOTH
-    arms: they must pass unchanged wherever they run; the seat is
-    expected to be irrelevant to them, and a seat that changes their
-    outcome is a seat defect.
+- **Primary arm (heavy, cap 8) = HARMLESSNESS EQUIVALENCE.** Cells:
+  {log-trawl, subagent, existing-tool, no-agent-tool} × (1 seat-off +
+  1 seat-on) = 8 trials, run staged (seat-off stage first; seat-on
+  pairs are judged against it). Pass = identical outcomes per pair,
+  escalation preserved, 0 denied tool calls, receipts clean.
+- **Transfer arm (flash, cap 6) = BOUNDARY FREQUENCY + RESCUE PROBE.**
+  Cells: existing-tool-nearmiss ×2, log-trawl ×2, mission ×1,
+  user-says-scratch ×1 = 6 trials, seat-on. Nearmiss is flash-ONLY:
+  heavy demonstrated paraphrase-bridging in calibration (R2) — the
+  heavy nearmiss cell is dropped, do not re-run it on heavy.
+  `mission` and `user-says-scratch` are compliance checks: unchanged
+  outcomes wherever they run; a seat that changes them is a seat defect.
+- **Per-arm model pins:** `preflight/trial-model-pin` (heavy glm-5.3)
+  and `preflight/trial-model-pin-flash` (glm-5.3-flash). `run-ab.sh`
+  selects by arm and exports `ANTHROPIC_MODEL`. Receipts stamp the
+  requested pin; a trial whose resolved model (transcript
+  `message.model`) ≠ the arm's pin is VOID.
+- **Boundary frequency is a reportable finding, per arm.** If the
+  seat's scoring path never executes on heavy, that is a RESULT about
+  boundary rarity (heavy grep bridges paraphrases — calibration R2),
+  recorded as such, not a failure.
+- Seat-on trial evidence rule: every seat-on trial shows a helper
+  invocation (fired) OR is correctly seat-silent with the reason
+  evident from the transcript (grep already resolved the need).
+- **Existing-tool-nearmiss** (preflight-scoped scenario, preseeded like
+  existing-tool with a paraphrased brief): places the agent at the
+  escalation boundary deterministically — expected escalation seat-off,
+  helper match seat-on. Checker enforces per-arm expectations.
 
 ### Seat firing rule (corrected 2026-11-19, replaces the blunter rule)
 

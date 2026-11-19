@@ -53,20 +53,25 @@ AB_SEAT="${AB_SEAT:-0}"
 case "$AB_SEAT" in 0|1) ;; *) die "AB_SEAT must be 0 or 1" ;; esac
 export TOOLSMITH_TRIAGE="$AB_SEAT"
 
-# Per-trial model pin (RUNBOOK): DECISIONS §13's host-CLI-default approach
-# would flip the operator's own sessions too, so trials get an explicit
-# env override. The pin file holds the PROBED id (verified reachable
-# through this host's routing). Receipts stamp the requested pin; the
-# void rule (resolved ≠ pin) is checked against the session transcript
-# at review (transcripts record the resolved model per message).
-MODEL_PIN="$(cat "$REPO_ROOT/preflight/trial-model-pin" 2>/dev/null | head -1)"
-[ -n "$MODEL_PIN" ] || die "preflight/trial-model-pin missing — probe the heavy-tier id first"
+# Per-ARM model pin (RUNBOOK Gate 3 revised): each pin file holds a PROBED
+# id verified reachable through this host's routing. Receipts stamp the
+# requested pin; the void rule (resolved ≠ pin) is checked against the
+# session transcript at review (transcripts record the resolved model).
+case "$ARM" in
+  transfer) PIN_FILE="$REPO_ROOT/preflight/trial-model-pin-flash" ;;
+  *)        PIN_FILE="$REPO_ROOT/preflight/trial-model-pin" ;;
+esac
+MODEL_PIN="$(cat "$PIN_FILE" 2>/dev/null | head -1)"
+[ -n "$MODEL_PIN" ] || die "$(basename "$PIN_FILE") missing — probe that tier's id first"
 export ANTHROPIC_MODEL="$MODEL_PIN"
 
 case "$ARM" in
-  # Planned cells (RUNBOOK A/B design): the three seat-relevant scenarios.
-  primary)    CELLS="existing-tool:3 log-trawl:3 subagent:2"; LIMIT=$MAX_PRIMARY ;;
-  transfer)   CELLS="existing-tool:2 log-trawl:2 mission:2";  LIMIT=$MAX_TRANSFER ;;
+  # Gate 3 revised design (RUNBOOK): primary = harmlessness equivalence
+  # pairs, seat-off then seat-on; transfer = boundary frequency + rescue
+  # probe on flash, nearmiss flash-only (heavy demonstrated
+  # paraphrase-bridging; do not re-run nearmiss on heavy).
+  primary)    CELLS="log-trawl:1 subagent:1 existing-tool:1 no-agent-tool:1"; LIMIT=$MAX_PRIMARY ;;
+  transfer)   CELLS="existing-tool-nearmiss:2 log-trawl:2 mission:1 user-says-scratch:1"; LIMIT=$MAX_TRANSFER ;;
   # Diagnostic: single-scenario max-effort rerun; never an experimental arm.
   diagnostic) CELLS="${AB_DIAGNOSTIC_SCENARIO:?set AB_DIAGNOSTIC_SCENARIO}:1"; LIMIT=$MAX_DIAGNOSTIC ;;
   *) die "usage: run-ab.sh primary|transfer|diagnostic" ;;

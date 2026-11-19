@@ -22,8 +22,11 @@
 #   1. TOOLSMITH_TRIAGE != 1             -> seat disabled by configuration
 #   2. TYPESAFE_API_KEY not set          -> presence check only; never printed
 #   3. probe GET yields no HTTP response -> egress down
-#   (plus any unexpected error under `set -eu`: unreadable catalog, curl
-#    failure, unreadable threshold, malformed response)
+#   (plus any unexpected error under `set -eu`: curl failure, unreadable
+#    threshold, catalog that exists but is unreadable, malformed response)
+# Zero-spend no-match paths (well-formed reply block, exit 0):
+#   - catalog file absent (no tools yet) — definitive no-match
+#   - catalog exists but no keyword candidates
 #
 # Threshold and model pin are read from the plugin tree, never hardcoded:
 #   preflight/RUNBOOK.md  "Recorded threshold: **0.32**"
@@ -84,7 +87,14 @@ LOCATE_RC=0
 LOCATE_OUT="$("$HERE/toolsmith-repo" locate 2>/dev/null)" || LOCATE_RC=$?
 [ "$LOCATE_RC" -eq 0 ] || [ "$LOCATE_RC" -eq 8 ] || exit 1
 CATALOG="$(printf '%s\n' "$LOCATE_OUT" | sed -n 's/^global_catalog=//p' | head -1)"
-[ -n "$CATALOG" ] && [ -r "$CATALOG" ] || exit 1
+[ -n "$CATALOG" ] || exit 1
+if [ ! -f "$CATALOG" ]; then
+    # Absent catalog = definitive no-match (no tools yet), not an error:
+    # well-formed reply block, zero spend, caller escalates as usual.
+    printf 'status: no-match\ntool: none\nconfidence: n/a\njev_version: n/a\n'
+    exit 0
+fi
+[ -r "$CATALOG" ] || exit 1   # exists but unreadable: internal failure, fail soft
 
 # Pick the closest few catalog lines: grep brief keywords against the
 # catalog, capped at 5. No candidates = status no-match, zero spend.
