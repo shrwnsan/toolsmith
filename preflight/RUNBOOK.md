@@ -116,8 +116,9 @@ restarts quota accounting (a deliberate, user-visible act).
 
 ## Execution-host split
 
-- oci-prime (this host): staged executor, preferred for scheduled /
-  overnight runs (no sleep). Probe verdict 2026-11-19: ready-to-execute.
-- Mac: authoring home — corpus authoring, PR work, commits, pushes.
-- oci-prime holds read-only-until-instructed posture: no push, no spend
-  without explicit "go".
+- oci-prime (this host): the working writer — Phase 0 authoring, corpus
+  work, commits, pushes (single-agent reality; the earlier Mac-authors /
+  prime-executes split is superseded. Mac remains the review side).
+- Mac: downstream review; owns the jev-seat methodological sign-off.
+- Spend posture: no real API spend without the user's explicit "go"
+  (Gate 2 authorized 2026-11-19: two passes, ~$1 total).

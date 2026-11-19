@@ -176,6 +176,11 @@ def main():
         sys.exit(3)
     if args.probe_only:
         return
+    if args.band and args.threshold is not None:
+        print("error: --band and --threshold are mutually exclusive "
+              "(F5: measure the band first, then run at the derived "
+              "threshold separately)", file=sys.stderr)
+        sys.exit(1)
     if args.band == (args.threshold is None):
         print("choose exactly one of --band or --threshold", file=sys.stderr)
         sys.exit(1)
@@ -214,12 +219,19 @@ def main():
         "confidence_max": max(conf), "model_resolved": resolved_seen,
     }
     if args.band:
-        # Band printout: the operator picks the threshold FROM this band and
-        # records it + the confirm-band mechanics in RUNBOOK before the
-        # scored run. Nothing here picks one.
+        # Per-class bands (F4): threshold picking needs the match band and
+        # the no-match band separately, plus their overlap verdict.
+        bands = {}
+        for label in ("match", "no-match"):
+            cs = [c for c, r in zip(conf, rows) if r["label"] == label]
+            bands[label] = {"min": min(cs), "max": max(cs), "n": len(cs)}
+        bands["overlap"] = (bands["match"]["min"]
+                            <= bands["no-match"]["max"])
+        summary["bands"] = bands
         print(json.dumps({"band": summary,
-                          "note": "pick threshold from this band; record in "
-                                  "RUNBOOK before any scored run"}))
+                          "note": "pick threshold from the per-class bands; "
+                                  "record it and the confirm-band mechanics "
+                                  "in RUNBOOK before any scored run"}))
         return
     summary.update({"threshold": args.threshold,
                     "false_clear": false_clear, "false_block": false_block,
