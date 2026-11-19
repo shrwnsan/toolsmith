@@ -100,8 +100,16 @@ for sc in $SCENARIOS; do
     OUT="$("$SCENARIO_RUNNER" "$sc" --trials 1 2>&1)" && RES=PASS || RES=FAIL
     # a FAIL is recorded, not fatal; halts are the gate's job
     RUN_DIR_ACTUAL="$(printf '%s\n' "$OUT" | sed -n 's/.*Logs: \([^ ]*\).*/\1/p' | tail -1)"
-    stamp_receipt "${RUN_DIR_ACTUAL:-unknown}" "$sc" "$RES"
     [ -n "$RUN_DIR_ACTUAL" ] || printf 'run-ab: warning: could not parse run dir for %s; receipt says unknown\n' "$sc" >&2
+    # Fail closed on quota accounting: if state cannot be updated durably,
+    # stop before any further spend. Receipt is written only after state.
+    if ! jq --arg id "$ARM:$sc" --arg r "$RES" --arg a "$ARM" \
+         '.trials[$id] = $r | .arms[$a].count = ((.arms[$a].count // 0) + 1)' \
+         "$STATE" > "$STATE.tmp"; then
+        die "could not update state.json for $sc — aborting before further spend"
+    fi
+    mv "$STATE.tmp" "$STATE"
+    stamp_receipt "${RUN_DIR_ACTUAL:-unknown}" "$sc" "$RES"
     jq --arg id "$ARM:$sc" --arg r "$RES" \
        '.trials[$id] = $r | .arms[$ARM].count = ((.arms[$ARM].count // 0) + 1)' \
        "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
