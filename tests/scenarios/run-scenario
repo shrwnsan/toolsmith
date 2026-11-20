@@ -141,7 +141,7 @@ setup_trial() {
         # existing-tool-nearmiss is preflight-scoped (Jev seat experiment):
         # identical preseed to existing-tool, paraphrased brief. Strip at
         # PR cherry-pick time.
-        existing-tool|existing-tool-nearmiss)
+        existing-tool|existing-tool-nearmiss|existing-tool-crowd)
             local out staged base
             out=$(TOOLSMITH_TEST_REPO="$TOOLS_REPO" "$plugin_root/bin/toolsmith-repo" stage http-5xx-by-endpoint) ||
                 die "could not stage the preseeded tool"
@@ -154,6 +154,26 @@ setup_trial() {
             TOOLS_REPO=$(cd -P -- "$TOOLS_REPO" && pwd -P)
             TOOLS_BASE=$(git -C "$TOOLS_REPO" rev-parse HEAD)
             PRESEED_TOOL="$TOOLS_REPO/bin/http-5xx-by-endpoint"
+            if [ "$scenario" = existing-tool-crowd ]; then
+                # preflight-scoped crowd test: bury the true match mid-list
+                # among plausible log-analysis tools (fixtures/crowd-catalog.txt
+                # holds "name -- purpose" lines; paths are prefixed with the
+                # trial's real tools repo). Catalog stays uncommitted; the
+                # crowd entries are plausible-but-absent tools, which is part
+                # of the crowding. Pre-registered outcomes: preflight/RUNBOOK.md.
+                local crowd="$scenarios_dir/fixtures/crowd-catalog.txt" cat="$TOOLS_REPO/CATALOG.md"
+                local header real_line before after n=0
+                header=$(head -1 "$cat")
+                real_line=$(grep -m1 '^/' "$cat")
+                before=$(head -22 "$crowd")
+                after=$(tail -n +23 "$crowd")
+                {
+                    printf '%s\n' "$header"
+                    printf '%s\n' "$before" | sed "s|^|- $TOOLS_REPO/bin/|"
+                    printf '%s\n' "$real_line"
+                    printf '%s\n' "$after" | sed "s|^|- $TOOLS_REPO/bin/|"
+                } > "$cat" || die "could not write the crowd catalog"
+            fi
             ;;
         user-says-scratch)
             SCRATCH=$(mktemp -d /tmp/toolsmith-scenario-scratch.XXXXXX) || die "could not make a scratch dir"

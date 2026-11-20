@@ -135,6 +135,28 @@ Known borderline row: **n22** ("generate a 32-char API key" vs
 mismatch (diceware words vs fixed-length key). If Gate 3 shows
 output-form false-clears, that refines the QUESTION set, not the corpus.
 
+## Crowd test (existing-tool-crowd) — PRE-REGISTERED 2026-11-20, before the run
+
+The last untested hypothesis: catalog SIZE creates the boundary the
+nearmiss matrix could not (the helper's scoring path had not executed in
+any trial). Design: preseed a ~45-line catalog of plausible log-analysis
+tools (crowding), true match `http-5xx-by-endpoint` buried mid-list,
+brief = the nearmiss paraphrase, flash tier (deployment-realistic, weakest
+grep — best case for the boundary), seat-off AND seat-on, 1 trial each,
+state.json reset sanctioned for exactly these 2 trials.
+
+Pre-registered outcomes (recorded before the run; NONE is a trial failure):
+1. Boundary arose + seat scored + match ≥ 0.32 + caller used the
+   preseeded tool directly ⇒ **RESCUE demonstrated; Gate 3 positive.**
+2. Boundary arose + seat scored + no-match or below threshold ⇒
+   mechanics exercised, value negative at this size; negative result
+   airtight.
+3. No boundary (caller grep-hits directly, as in the matrix) ⇒
+   catalog-size hypothesis disconfirmed at size ~50; negative result
+   airtight.
+Helper scoring cap: ≤ 8 scored calls per invocation (~$0.008); the
+keyword candidate pre-filter already caps candidates at 5.
+
 ## A/B design (Gate 3, revised 2026-11-19 after calibration)
 
 - **Baseline arm = seat-off on this host and tier** (`AB_SEAT=0`).

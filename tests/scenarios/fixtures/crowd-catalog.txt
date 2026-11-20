@@ -1,0 +1,44 @@
+log-tail-since -- print log lines after a given timestamp; supports combined and syslog formats
+access-top-ip -- rank client IPs by request count across an access log with --since windows
+log-filter-status -- emit only the lines whose HTTP status matches a code or range
+latency-percentiles -- compute p50/p95/p99 response times from request-duration fields
+log-rotate-size -- rotate a growing log when it passes a size threshold, keeping N generations
+useragent-breakdown -- group requests by user-agent family and count
+log-merge-sort -- merge several chronologically skewed log files into one sorted stream
+ip-reputation -- look up a list of IPs against local blocklists and tag hits
+path-normalizer -- fold numeric path segments and query strings into templated route shapes
+slow-requests -- list requests above a latency threshold with their referers
+error-budget-burn -- compute monthly error-budget burn from a status-code history file
+log-diff-ranges -- diff two log slices and report newly appearing endpoints
+cron-log-scan -- scan cron/job logs for non-zero exits and elapsed-time outliers
+visit-funnel -- count distinct sessions reaching successive URL patterns
+gzip-log-lines -- compress and index rotated logs with a line-offset sidecar
+log-sample -- deterministic random sample of N lines per hour for eyeballing
+referer-spam -- flag requests whose referer matches a known spam list
+byte-histogram -- histogram response sizes to spot oversized payloads
+first-byte-delay -- report time-to-first-byte distribution per vhost
+log-to-csv -- convert combined-format logs to CSV with fixed columns
+sessionize -- assign session ids by cookie plus inactivity gap
+request-rate-spike -- alert-shaped output of minutes where request rate exceeds a moving average
+ssl-log-tally -- tally handshake failures and cipher usage from tls logs
+bot-classify -- classify requests as bot/human from agent plus request cadence
+404-top-paths -- rank the most-requested missing paths from the error side of a log
+geo-ip-summary -- summarize request volume per country using a local geoip dump
+log-line-hash -- fingerprint lines to find duplicated entries across files
+maintenance-window-trim -- drop log lines inside a defined maintenance window
+status-transition -- find sessions whose status codes degrade over the session
+log-archive-manifest -- write a manifest of archived logs with line counts and ranges
+api-key-usage -- attribute requests to api keys parsed from headers or query params
+range-request-stats -- statistics on 206 range requests and their offsets
+cookie-absent-ratio -- ratio of requests missing session cookies per path
+log-charset-fix -- repair mixed-encoding lines so parsers stop choking
+retry-storm-detect -- detect client retry storms from repeated paths and short gaps
+empty-referer-ratio -- ratio of empty referers per endpoint and per hour
+trailing-slash-canonicalize -- normalize trailing slashes before endpoint grouping
+peak-hour-profile -- profile per-hour request volume and top endpoints per hour
+auth-failure-cluster -- cluster 401/403 lines by path and source
+log-head-truncate -- drop the first N lines or everything before a marker
+response-flag-tally -- tally upstream response flags from a proxy log
+silent-endpoints -- list endpoints that disappeared from this week's log versus last
+log-line-number-index -- build a byte-offset index for random access into big logs
+captcha-hit-count -- count captcha challenge deliveries per client fingerprint
