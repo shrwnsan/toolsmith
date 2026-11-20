@@ -199,7 +199,16 @@ for trial in $(seq 1 "$trials"); do
     mkdir -p "$dir"
     setup_trial "$dir"
     prompt=${prompt_template//\{\{SCRATCH\}\}/$SCRATCH}
-    session=$(uuidgen | tr 'A-Z' 'a-z')
+    # Claude Code names session files in lowercase and uuidgen prints
+    # uppercase, hence tr. uuidgen is missing on minimal Linux hosts, so
+    # fall back to procfs, then python3, and fail loudly rather than run
+    # with an empty id, which transcript discovery can never match.
+    session=$(uuidgen 2>/dev/null | tr 'A-Z' 'a-z')
+    if [ -z "$session" ]; then
+        session=$(cat /proc/sys/kernel/random/uuid 2>/dev/null ||
+            python3 -c 'import uuid; print(uuid.uuid4())' 2>/dev/null)
+    fi
+    [ -n "$session" ] || die "could not generate a session id: need uuidgen, a Linux procfs, or python3 on PATH"
     git -C "$CALLER" status --porcelain >"$dir/caller-status-before"
     caller_head=$(git -C "$CALLER" rev-parse HEAD)
     real_repos_state >"$dir/real-repos-before"
